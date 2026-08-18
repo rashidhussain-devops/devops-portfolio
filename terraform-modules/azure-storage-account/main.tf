@@ -1,15 +1,15 @@
 resource "azurerm_storage_account" "this" {
-  name                            = var.storage_account_name
-  resource_group_name             = var.resource_group_name
-  location                        = var.location
-  account_tier                    = "Standard"
-  account_replication_type        = var.replication_type
-  min_tls_version                 = "TLS1_2"
-  public_network_access_enabled   = var.public_network_access_enabled
-  shared_access_key_enabled       = false
-  https_traffic_only_enabled      = true
+  name                              = var.storage_account_name
+  resource_group_name               = var.resource_group_name
+  location                          = var.location
+  account_tier                      = "Standard"
+  account_replication_type          = var.replication_type
+  min_tls_version                   = "TLS1_2"
+  public_network_access_enabled     = var.public_network_access_enabled
+  shared_access_key_enabled         = false
+  https_traffic_only_enabled        = true
   infrastructure_encryption_enabled = true
-  tags                             = var.tags
+  tags                              = var.tags
 
   blob_properties {
     versioning_enabled = true

@@ -20,14 +20,14 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   default_node_pool {
-    name                 = "system"
-    vm_size              = var.system_node_vm_size
-    vnet_subnet_id       = var.subnet_id
-    orchestrator_version = var.kubernetes_version
-    auto_scaling_enabled = true
-    min_count            = var.system_node_min_count
-    max_count            = var.system_node_max_count
-    zones                = var.availability_zones
+    name                         = "system"
+    vm_size                      = var.system_node_vm_size
+    vnet_subnet_id               = var.subnet_id
+    orchestrator_version         = var.kubernetes_version
+    auto_scaling_enabled         = true
+    min_count                    = var.system_node_min_count
+    max_count                    = var.system_node_max_count
+    zones                        = var.availability_zones
     only_critical_addons_enabled = true
     upgrade_settings {
       max_surge = "10%"
@@ -39,7 +39,7 @@ resource "azurerm_kubernetes_cluster" "this" {
     network_plugin_mode = "overlay"
     network_policy      = "cilium"
     load_balancer_sku   = "standard"
-    outbound_type        = "loadBalancer"
+    outbound_type       = "loadBalancer"
   }
 
   oidc_issuer_enabled       = true
