@@ -61,14 +61,14 @@ variable "log_analytics_workspace_id" {
 
 variable "workload_node_pools" {
   description = "Additional user node pools beyond the system pool."
-  type        = map(object({
+  type = map(object({
     vm_size     = string
     min_count   = number
     max_count   = number
     node_labels = optional(map(string), {})
     node_taints = optional(list(string), [])
   }))
-  default     = {}
+  default = {}
 }
 
 variable "tags" {
