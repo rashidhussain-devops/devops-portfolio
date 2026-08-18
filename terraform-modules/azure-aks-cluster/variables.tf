@@ -68,7 +68,7 @@ variable "workload_node_pools" {
     node_labels = optional(map(string), {})
     node_taints = optional(list(string), [])
   }))
-  default = {}
+  default     = {}
 }
 
 variable "tags" {
