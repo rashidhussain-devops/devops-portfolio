@@ -34,7 +34,7 @@ variable "subnets" {
       service_name = string
       actions      = list(string)
     }))
-    security_rules = optional(list(object({
+    security_rules   = optional(list(object({
       name                   = string
       priority               = number
       direction              = string
