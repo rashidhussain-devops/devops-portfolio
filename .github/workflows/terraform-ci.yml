@@ -34,7 +34,7 @@ jobs:
           terraform_version: "1.7.5"
 
       - name: terraform fmt
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -diff -recursive
 
       - name: terraform init
         run: terraform init -backend=false
