@@ -1,77 +1,96 @@
-variable "cluster_name" {
-  type = string
-}
+name: Terraform CI
 
-variable "dns_prefix" {
-  type = string
-}
+on:
+  pull_request:
+    paths:
+      - 'terraform-modules/**'
+  push:
+    branches: [main]
+    paths:
+      - 'terraform-modules/**'
 
-variable "resource_group_name" {
-  type = string
-}
+permissions:
+  id-token: write   # for OIDC login to Azure — no stored client secret
+  contents: read
+  pull-requests: write
 
-variable "location" {
-  type    = string
-  default = "westeurope"
-}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - azure-networking
+          - azure-aks-cluster
+          - azure-storage-account
+    defaults:
+      run:
+        working-directory: terraform-modules/${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
 
-variable "kubernetes_version" {
-  description = "Pin explicitly; do not track 'latest' in production."
-  type        = string
-}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
 
-variable "sku_tier" {
-  type    = string
-  default = "Standard"
-  validation {
-    condition     = contains(["Free", "Standard", "Premium"], var.sku_tier)
-    error_message = "sku_tier must be Free, Standard, or Premium."
-  }
-}
+      - name: terraform fmt
+        run: terraform fmt -check -diff -recursive
 
-variable "subnet_id" {
-  description = "Subnet ID for node pools, typically the output of azure-networking."
-  type        = string
-}
+      - name: terraform init
+        run: terraform init -backend=false
 
-variable "system_node_vm_size" {
-  type    = string
-  default = "Standard_D4s_v5"
-}
+      - name: terraform validate
+        run: terraform validate
 
-variable "system_node_min_count" {
-  type    = number
-  default = 2
-}
+      - name: tflint
+        uses: terraform-linters/setup-tflint@v4
+      - run: tflint
 
-variable "system_node_max_count" {
-  type    = number
-  default = 4
-}
+      - name: checkov static analysis
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform-modules/${{ matrix.module }}
+          framework: terraform
+          soft_fail: true
 
-variable "availability_zones" {
-  type    = list(string)
-  default = ["1", "2", "3"]
-}
+  plan:
+    needs: validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: plan
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
 
-variable "log_analytics_workspace_id" {
-  description = "Workspace ID for Defender + Container Insights (oms_agent)."
-  type        = string
-}
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-variable "workload_node_pools" {
-  description = "Additional user node pools beyond the system pool."
-  type        = map(object({
-    vm_size     = string
-    min_count   = number
-    max_count   = number
-    node_labels = optional(map(string), {})
-    node_taints = optional(list(string), [])
-  }))
-  default     = {}
-}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
 
-variable "tags" {
-  type    = map(string)
-  default = {}
-}
+      - name: terraform plan
+        working-directory: envs/dev
+        run: |
+          terraform init
+          terraform plan -no-color -out=tfplan | tee plan.txt
+
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('envs/dev/plan.txt', 'utf8').slice(-60000);
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### Terraform Plan\n\`\`\`\n${plan}\n\`\`\``
+            });
