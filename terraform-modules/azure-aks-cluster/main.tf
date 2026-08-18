@@ -60,9 +60,14 @@ resource "azurerm_kubernetes_cluster" "this" {
   maintenance_window_auto_upgrade {
     frequency   = "Weekly"
     interval    = 1
+    duration    = 4
     day_of_week = "Sunday"
     start_time  = "02:00"
     utc_offset  = "+00:00"
+  }
+
+  node_provisioning_profile {
+    mode = "Manual"
   }
 
   lifecycle {
