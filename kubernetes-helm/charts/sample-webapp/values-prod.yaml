@@ -1,0 +1,21 @@
+# Environment-specific overrides layered on top of values.yaml via
+# `helm.valueFiles` in the ArgoCD Application manifest.
+replicaCount: 3
+
+image:
+  tag: "1.4.2"
+
+ingress:
+  host: app.example.com
+
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 20
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

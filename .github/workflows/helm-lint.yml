@@ -1,0 +1,34 @@
+name: Helm Lint & Template Validation
+
+on:
+  pull_request:
+    paths:
+      - 'kubernetes-helm/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: helm lint
+        run: helm lint kubernetes-helm/charts/sample-webapp
+
+      - name: helm template
+        run: |
+          helm template test-release kubernetes-helm/charts/sample-webapp \
+            > /tmp/rendered.yaml
+
+      - name: Validate against Kubernetes API schema
+        uses: docker://ghcr.io/yannh/kubeconform:latest
+        with:
+          args: -strict -summary -kubernetes-version 1.29.0 /tmp/rendered.yaml
+
+      - name: Scan rendered manifests with kube-linter
+        uses: stackrox/kube-linter-action@v1
+        with:
+          directory: /tmp/rendered.yaml

@@ -1,0 +1,96 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - 'terraform-modules/**'
+  push:
+    branches: [main]
+    paths:
+      - 'terraform-modules/**'
+
+permissions:
+  id-token: write   # for OIDC login to Azure — no stored client secret
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - azure-networking
+          - azure-aks-cluster
+          - azure-storage-account
+    defaults:
+      run:
+        working-directory: terraform-modules/${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: tflint
+        uses: terraform-linters/setup-tflint@v4
+      - run: tflint --chdir=terraform-modules/${{ matrix.module }}
+
+      - name: checkov static analysis
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform-modules/${{ matrix.module }}
+          framework: terraform
+          soft_fail: true
+
+  plan:
+    needs: validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: plan
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform plan
+        working-directory: envs/dev
+        run: |
+          terraform init
+          terraform plan -no-color -out=tfplan | tee plan.txt
+
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('envs/dev/plan.txt', 'utf8').slice(-60000);
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### Terraform Plan\n\`\`\`\n${plan}\n\`\`\``
+            });

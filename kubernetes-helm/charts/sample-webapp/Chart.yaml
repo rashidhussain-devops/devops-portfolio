@@ -1,0 +1,8 @@
+apiVersion: v2
+name: sample-webapp
+description: Generic Helm chart for a stateless HTTP workload, used as the template for real app charts in this portfolio.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Rashid Hussain

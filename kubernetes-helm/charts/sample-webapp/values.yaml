@@ -1,0 +1,64 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/example/sample-webapp
+  tag: ""            # defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  # Set for Azure Workload Identity federation
+  annotations: {}
+  #   azure.workload.identity/client-id: "<uuid>"
+
+podLabels:
+  azure.workload.identity/use: "true"
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  host: app.example.com
+  tls: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 10
+  readiness:
+    path: /ready
+    initialDelaySeconds: 5
+
+env: []
+# - name: LOG_LEVEL
+#   value: "info"
+
+envFromSecretRef: ""  # name of an ExternalSecret-managed Secret, if any
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
