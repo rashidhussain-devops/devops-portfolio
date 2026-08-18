@@ -44,7 +44,7 @@ jobs:
 
       - name: tflint
         uses: terraform-linters/setup-tflint@v4
-      - run: tflint --chdir=terraform-modules/${{ matrix.module }}
+      - run: tflint
 
       - name: checkov static analysis
         uses: bridgecrewio/checkov-action@master
