@@ -1,8 +1,15 @@
 name: Nightly Terraform Drift Check
 
+# Schedule intentionally disabled: this workflow needs a live Azure
+# subscription behind envs/dev, envs/staging, envs/prod (deliberately not
+# included in this public repo — see the top-level README) plus
+# AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_SUBSCRIPTION_ID as repo secrets.
+# Kept here as a reference implementation of the drift-detection pattern;
+# wire up the schedule + secrets again once this is pointed at a real
+# environment.
 on:
-  schedule:
-    - cron: '0 3 * * *'   # 03:00 UTC daily
+  # schedule:
+  #   - cron: '0 3 * * *'   # 03:00 UTC daily
   workflow_dispatch: {}
 
 permissions:
