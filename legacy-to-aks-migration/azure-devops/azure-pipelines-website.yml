@@ -1,0 +1,89 @@
+# Builds the containerized website image and deploys it to AKS with a
+# rolling update. Runs on the on-premises self-hosted agent pool (see
+# ../self-hosted-agent/) since the build needs to produce a Windows
+# container image, and Microsoft-hosted parallel jobs for Windows
+# containers were both slower and a recurring cost line item compared to
+# building on hardware already sitting on-prem.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - legacy-to-aks-migration/docker/*
+      - legacy-to-aks-migration/kubernetes/*
+
+pool:
+  name: OnPrem-Windows-Agents   # self-hosted pool, registered per ../self-hosted-agent/register-agent.ps1
+
+variables:
+  acrName: 'qrcsacr'
+  imageName: 'qrcs-website'
+  imageTag: '$(Build.BuildId)'
+  aksResourceGroup: 'rg-qrcs-prod'
+  aksClusterName: 'aks-qrcs-prod'
+  k8sNamespace: 'production'
+
+stages:
+  - stage: Build
+    jobs:
+      - job: BuildAndPush
+        steps:
+          - task: Docker@2
+            displayName: 'Build website image'
+            inputs:
+              command: build
+              Dockerfile: 'legacy-to-aks-migration/docker/Dockerfile.website'
+              buildContext: 'legacy-to-aks-migration/docker'
+              repository: '$(imageName)'
+              tags: |
+                $(imageTag)
+                latest
+
+          - task: Docker@2
+            displayName: 'Push to ACR'
+            inputs:
+              containerRegistry: 'qrcs-acr-connection'   # service connection, not a stored secret
+              repository: '$(imageName)'
+              command: push
+              tags: |
+                $(imageTag)
+                latest
+
+  - stage: Deploy
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployToAKS
+        environment: 'production'   # requires manual approval gate, configured in Azure DevOps environment settings
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: KubernetesManifest@1
+                  displayName: 'Set image tag'
+                  inputs:
+                    action: 'deploy'
+                    connectionType: 'azureResourceManager'
+                    azureSubscriptionConnection: 'qrcs-azure-connection'
+                    azureResourceGroup: '$(aksResourceGroup)'
+                    kubernetesCluster: '$(aksClusterName)'
+                    namespace: '$(k8sNamespace)'
+                    manifests: 'legacy-to-aks-migration/kubernetes/website-deployment.yaml'
+                    containers: '$(acrName).azurecr.io/$(imageName):$(imageTag)'
+
+                - task: Kubernetes@1
+                  displayName: 'Wait for rollout to complete'
+                  inputs:
+                    connectionType: 'Azure Resource Manager'
+                    azureSubscriptionEndpoint: 'qrcs-azure-connection'
+                    azureResourceGroup: '$(aksResourceGroup)'
+                    kubernetesCluster: '$(aksClusterName)'
+                    namespace: '$(k8sNamespace)'
+                    command: 'rollout'
+                    arguments: 'status deployment/qrcs-website --timeout=180s'
+                    # Fails the pipeline (rather than reporting false success)
+                    # if the new pods never pass their readiness probe —
+                    # this is what actually guarantees zero downtime, not
+                    # just the deploy step returning without error.

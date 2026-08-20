@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qrcs-website
+  labels:
+    app: qrcs-website
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # The core of the zero-downtime requirement: never drop below full
+      # capacity during a rollout, and bring up one extra pod at a time
+      # rather than replacing several at once.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: qrcs-website
+  template:
+    metadata:
+      labels:
+        app: qrcs-website
+    spec:
+      # Windows-based app image needs a Windows node pool in the cluster
+      nodeSelector:
+        kubernetes.io/os: windows
+      containers:
+        - name: website
+          image: <acr-name>.azurecr.io/qrcs-website:<tag>
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qrcs-website
+spec:
+  selector:
+    app: qrcs-website
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: qrcs-website-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: qrcs-website

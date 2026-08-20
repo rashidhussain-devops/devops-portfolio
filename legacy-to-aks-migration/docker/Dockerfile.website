@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+#
+# Containerizes the IIS-hosted corporate website. Uses the Windows Server
+# Core IIS base image so the app doesn't need a framework rewrite to run —
+# the goal of this migration was fixing the deployment and scaling story,
+# not rewriting a working application.
+
+FROM mcr.microsoft.com/windows/servercore/iis:windowsservercore-ltsc2022
+
+# Remove the default IIS welcome site content
+RUN powershell -Command \
+    Remove-Item -Recurse -Force C:\inetpub\wwwroot\*
+
+# Application content
+COPY ./site-content/ C:/inetpub/wwwroot/
+
+# App-specific IIS configuration (request limits, compression, health
+# endpoint) applied via a startup script rather than baked into a series of
+# Dockerfile RUN commands, so it's testable and readable as its own unit.
+COPY ./configure-iis.ps1 C:/scripts/configure-iis.ps1
+RUN powershell -File C:/scripts/configure-iis.ps1
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD powershell -Command \
+    "try { (Invoke-WebRequest -Uri http://localhost/healthz -UseBasicParsing).StatusCode -eq 200 } catch { exit 1 }"

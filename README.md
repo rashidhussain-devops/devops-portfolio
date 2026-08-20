@@ -8,15 +8,33 @@ that I can write YAML.
 **Rashid Hussain** — Cloud Architect / Senior DevOps Engineer · Azure, AKS/EKS, Terraform, GitOps
 [LinkedIn](#) · [Certifications: AZ-400, Terraform Associate](#)
 
+## Flagship: designing a CI/CD platform from zero
+
+Most of what's below is reusable IaC and pipeline patterns. This one is
+the actual project that made the rest necessary:
+
+QRCS's official website and CRM application were both deployed by a
+developer RDP-ing into a Windows Server and manually copying files into
+`inetpub\wwwroot`. As traffic grew, the servers came under increasing load
+with no way to scale short of provisioning another VM by hand — and every
+release carried real outage risk. I recommended and built the replacement
+myself: an Azure DevOps CI/CD pipeline running on an on-premises
+self-hosted build agent, deploying containerized applications to AKS with
+zero-downtime rolling updates. Developers now push to a branch and the
+pipeline handles build, image push, and deployment — no RDP, no outage
+window, no manual VM provisioning to scale.
+
+**[→ Full case study, architecture diagrams, and the actual pipeline/agent/Kubernetes configs](./legacy-to-aks-migration)**
+
 ## What's here and why
 
 | Path | What it shows |
 |---|---|
+| [`legacy-to-aks-migration/`](./legacy-to-aks-migration) | The flagship project above — the real migration, in detail |
 | [`terraform-modules/`](./terraform-modules) | Composable, versioned IaC — networking, AKS, storage — with real defaults (Workload Identity, private endpoints, disabled shared keys), not toy examples |
 | [`kubernetes-helm/`](./kubernetes-helm) | A hardened application Helm chart plus an ArgoCD app-of-apps GitOps layout |
 | [`.github/workflows/`](./.github/workflows) | CI/CD: Terraform plan/apply with OIDC (no stored cloud secrets), container build/scan/sign, Helm lint, scheduled drift detection |
 | [`scripts/`](./scripts) | Operational automation: Entra ID deprovisioning, AKS cluster bootstrap, cluster-state backup, cross-platform patching with pre/post checks and snapshotting |
-| [`monitoring-telegraf/`](./monitoring-telegraf) | Hybrid Azure + on-prem monitoring — Telegraf agents, InfluxDB, and Grafana dashboards for infrastructure Azure Monitor can't reach directly |
 | [`patching-automation/`](./patching-automation) | Scheduled Windows/Linux patch pipeline — implemented in both Azure DevOps and Jenkins/Bitbucket, with prechecks, pre-patch snapshots, postcheck regression detection, and SendGrid notifications via Azure Logic App |
 | [`monitoring-telegraf/`](./monitoring-telegraf) | Grafana + InfluxDB + Telegraf stack monitoring Azure (Sophos cloud firewall, Application Gateway WAF) and on-prem (Domain Controllers, Barracuda firewall, storage server, DHCP, Veeam backup) side by side |
 | [`docs/architecture.md`](./docs/architecture.md) | How the pieces fit together end to end |
@@ -50,6 +68,12 @@ devops-portfolio/
 ├── kubernetes-helm/
 │   ├── charts/sample-webapp/    # Hardened application chart (HPA, PDB, non-root)
 │   └── gitops/argocd/           # App-of-apps root + child Application manifests
+├── legacy-to-aks-migration/
+│   ├── docker/                  # Containerizing an existing IIS site (no framework rewrite)
+│   ├── kubernetes/              # Rolling-update deployment: the actual zero-downtime mechanism
+│   ├── azure-devops/            # Build → push → deploy pipeline, on-prem self-hosted agent
+│   ├── self-hosted-agent/       # Registering an on-prem Windows host as a build agent
+│   └── docs/architecture.md     # Before/after diagrams and the reasoning
 ├── .github/workflows/
 │   ├── terraform-ci.yml         # fmt/validate/tflint/checkov + OIDC plan on PRs
 │   ├── docker-build-push.yml    # Multi-arch build, Trivy scan, cosign sign
