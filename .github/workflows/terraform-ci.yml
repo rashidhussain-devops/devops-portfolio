@@ -1,6 +1,7 @@
 name: Terraform CI
 
 on:
+  workflow_dispatch: {}
   pull_request:
     paths:
       - 'terraform-modules/**'
@@ -34,7 +35,7 @@ jobs:
           terraform_version: "1.7.5"
 
       - name: terraform fmt
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -diff -recursive
 
       - name: terraform init
         run: terraform init -backend=false
@@ -44,7 +45,7 @@ jobs:
 
       - name: tflint
         uses: terraform-linters/setup-tflint@v4
-      - run: tflint --chdir=terraform-modules/${{ matrix.module }}
+      - run: tflint
 
       - name: checkov static analysis
         uses: bridgecrewio/checkov-action@master

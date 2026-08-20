@@ -27,9 +27,9 @@ variable "address_space" {
 
 variable "subnets" {
   description = "Map of subnets to create, each with its own address space, optional delegation, and NSG rules."
-  type        = map(object({
+  type = map(object({
     address_prefixes = list(string)
-    delegation       = optional(object({
+    delegation = optional(object({
       name         = string
       service_name = string
       actions      = list(string)

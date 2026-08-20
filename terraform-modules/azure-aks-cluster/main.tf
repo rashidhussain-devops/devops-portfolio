@@ -1,3 +1,5 @@
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_user_assigned_identity" "aks" {
   name                = "${var.cluster_name}-identity"
   resource_group_name = var.resource_group_name
@@ -47,6 +49,7 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   azure_active_directory_role_based_access_control {
     azure_rbac_enabled = true
+    tenant_id          = data.azurerm_client_config.current.tenant_id
   }
 
   microsoft_defender {
@@ -60,9 +63,14 @@ resource "azurerm_kubernetes_cluster" "this" {
   maintenance_window_auto_upgrade {
     frequency   = "Weekly"
     interval    = 1
+    duration    = 4
     day_of_week = "Sunday"
     start_time  = "02:00"
     utc_offset  = "+00:00"
+  }
+
+  node_provisioning_profile {
+    mode = "Manual"
   }
 
   lifecycle {
