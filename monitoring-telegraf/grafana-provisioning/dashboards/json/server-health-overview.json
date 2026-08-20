@@ -1,0 +1,49 @@
+{
+  "title": "Server Health Overview",
+  "uid": "server-health-overview",
+  "tags": ["infrastructure", "telegraf"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "CPU Usage %",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "query": "SELECT mean(\"usage_active\") FROM \"cpu\" WHERE $timeFilter GROUP BY time(30s), \"host\" fill(null)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory Available (MB)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "query": "SELECT mean(\"available_MBytes\") FROM \"mem\" WHERE $timeFilter GROUP BY time(30s), \"host\" fill(null)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk Free %",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "query": "SELECT mean(\"free_percent\") FROM \"disk\" WHERE $timeFilter GROUP BY time(30s), \"host\" fill(null)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Backup Freshness (hours)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "query": "SELECT last(\"age_hours\") FROM \"backup_status\" GROUP BY \"container\""
+        }
+      ]
+    }
+  ]
+}

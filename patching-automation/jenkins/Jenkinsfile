@@ -1,0 +1,137 @@
+// Jenkinsfile — Windows/Linux patching pipeline
+// Source repo: Bitbucket (webhook-triggered via the Bitbucket Branch Source plugin;
+// this job itself runs on a schedule, not on commit, since patch runs are
+// maintenance-window events rather than CI events).
+//
+// Credentials referenced below are all Jenkins Credentials Store entries
+// (Bitbucket app password, Azure service principal, SendGrid API key) —
+// nothing is stored in this file or in Bitbucket.
+
+pipeline {
+    agent { label 'patching-controller' }
+
+    parameters {
+        choice(name: 'TARGET_GROUP', choices: ['linux-app-servers', 'linux-db-servers', 'windows-app-servers', 'windows-db-servers'], description: 'Server group to patch')
+        booleanParam(name: 'DRY_RUN', defaultValue: false, description: 'Precheck + snapshot only, skip actual patching')
+        string(name: 'SNAPSHOT_RETENTION_DAYS', defaultValue: '7', description: 'Days to retain pre-patch snapshots')
+    }
+
+    triggers {
+        cron('H 2 * * 6') // Saturday, ~02:00, jittered by Jenkins' H hash
+    }
+
+    environment {
+        AZURE_CREDS       = credentials('azure-patching-sp')       // client-id / client-secret
+        SENDGRID_API_KEY  = credentials('sendgrid-api-key')
+        LOGIC_APP_URL     = credentials('patching-logicapp-url')
+        INVENTORY_FILE    = "${WORKSPACE}/inventory.json"
+        PRECHECK_REPORT   = "${WORKSPACE}/precheck-report.json"
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 3, unit: 'HOURS')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Bitbucket source: credentials via Jenkins' Bitbucket app-password
+                // credential binding configured on the multibranch job, not here.
+                checkout scm
+            }
+        }
+
+        stage('Azure Login') {
+            steps {
+                sh '''
+                    az login --service-principal \
+                      -u "$AZURE_CREDS_USR" \
+                      -p "$AZURE_CREDS_PSW" \
+                      --tenant "$AZURE_TENANT_ID"
+                '''
+            }
+        }
+
+        stage('Fetch Inventory') {
+            steps {
+                sh """
+                    az vm list -d --query "[?tags.patchGroup=='${params.TARGET_GROUP}'].{name:name, rg:resourceGroup, powerState:powerState}" \
+                      -o json > ${INVENTORY_FILE}
+                    cat ${INVENTORY_FILE}
+                """
+            }
+        }
+
+        stage('Prechecks') {
+            steps {
+                sh "bash patching-automation/scripts/prechecks/run-prechecks.sh ${INVENTORY_FILE}"
+            }
+        }
+
+        stage('Snapshot') {
+            steps {
+                sh "bash patching-automation/scripts/snapshot/create-azure-snapshot.sh ${INVENTORY_FILE} ${params.SNAPSHOT_RETENTION_DAYS}"
+            }
+        }
+
+        stage('Patch') {
+            when { expression { return !params.DRY_RUN } }
+            parallel {
+                stage('Linux') {
+                    when { expression { params.TARGET_GROUP.contains('linux') } }
+                    steps {
+                        sh '''
+                            for vm in $(jq -r '.[].name' "$INVENTORY_FILE"); do
+                              rg=$(jq -r --arg n "$vm" '.[] | select(.name==$n) | .rg' "$INVENTORY_FILE")
+                              az vm run-command invoke --resource-group "$rg" --name "$vm" \
+                                --command-id RunShellScript \
+                                --scripts "sudo apt-get update && sudo apt-get -y upgrade"
+                            done
+                        '''
+                    }
+                }
+                stage('Windows') {
+                    when { expression { params.TARGET_GROUP.contains('windows') } }
+                    steps {
+                        sh '''
+                            for vm in $(jq -r '.[].name' "$INVENTORY_FILE"); do
+                              rg=$(jq -r --arg n "$vm" '.[] | select(.name==$n) | .rg' "$INVENTORY_FILE")
+                              az vm run-command invoke --resource-group "$rg" --name "$vm" \
+                                --command-id RunPowerShellScript \
+                                --scripts "Install-Module PSWindowsUpdate -Force; Get-WindowsUpdate -AcceptAll -Install -AutoReboot"
+                            done
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Postchecks') {
+            when { expression { return !params.DRY_RUN } }
+            steps {
+                sh "bash patching-automation/scripts/postchecks/run-postchecks.sh ${INVENTORY_FILE} ${PRECHECK_REPORT}"
+            }
+        }
+    }
+
+    post {
+        always {
+            // Logic App receives the webhook and handles the actual SendGrid
+            // send — see ../logic-app/patch-notification-logicapp.json
+            sh """
+                curl -X POST "\$LOGIC_APP_URL" \
+                  -H "Content-Type: application/json" \
+                  -d '{
+                    "pipeline": "${env.JOB_NAME}",
+                    "buildNumber": "${env.BUILD_NUMBER}",
+                    "targetGroup": "${params.TARGET_GROUP}",
+                    "status": "${currentBuild.currentResult}",
+                    "dryRun": ${params.DRY_RUN}
+                  }'
+            """
+            archiveArtifacts artifacts: 'inventory.json,precheck-report.json', allowEmptyArchive: true
+        }
+    }
+}

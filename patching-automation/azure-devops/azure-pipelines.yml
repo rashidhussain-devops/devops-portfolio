@@ -1,0 +1,181 @@
+trigger: none # patch runs are scheduled, not triggered by commits
+
+schedules:
+  - cron: "0 2 * * 6" # Saturday 02:00 UTC — outside business hours
+    displayName: Weekly maintenance window
+    branches:
+      include: [main]
+    always: true
+
+parameters:
+  - name: targetGroup
+    displayName: Server group to patch
+    type: string
+    default: linux-app-servers
+    values:
+      - linux-app-servers
+      - linux-db-servers
+      - windows-app-servers
+      - windows-db-servers
+  - name: snapshotRetentionDays
+    displayName: Snapshot retention (days)
+    type: number
+    default: 7
+  - name: dryRun
+    displayName: Dry run (precheck + snapshot only, no patching)
+    type: boolean
+    default: false
+
+variables:
+  - group: patching-automation-secrets # AZURE_SP_*, SENDGRID_API_KEY, LOGIC_APP_URL
+
+pool:
+  vmImage: "ubuntu-latest"
+
+stages:
+  - stage: Precheck
+    displayName: Pre-patch validation
+    jobs:
+      - job: Precheck
+        steps:
+          - task: AzureCLI@2
+            displayName: Azure login (service connection, no stored secret)
+            inputs:
+              azureSubscription: "patching-automation-sc"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: az account show
+
+          - task: AzureCLI@2
+            displayName: Fetch target server inventory
+            inputs:
+              azureSubscription: "patching-automation-sc"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az vm list -d --query "[?tags.patchGroup=='${{ parameters.targetGroup }}'].{name:name, rg:resourceGroup, powerState:powerState}" \
+                  -o json > $(Pipeline.Workspace)/inventory.json
+                cat $(Pipeline.Workspace)/inventory.json
+
+          - task: Bash@3
+            displayName: Run pre-checks against inventory
+            inputs:
+              targetType: filePath
+              filePath: patching-automation/scripts/prechecks/run-prechecks.sh
+              arguments: "$(Pipeline.Workspace)/inventory.json"
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish precheck report
+            inputs:
+              targetPath: $(Pipeline.Workspace)/precheck-report.json
+              artifact: precheck-report
+
+  - stage: Snapshot
+    displayName: Create pre-patch snapshots
+    dependsOn: Precheck
+    condition: succeeded()
+    jobs:
+      - job: Snapshot
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: precheck-report
+              path: $(Pipeline.Workspace)
+
+          - task: AzureCLI@2
+            displayName: Snapshot each managed disk
+            inputs:
+              azureSubscription: "patching-automation-sc"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                bash patching-automation/scripts/snapshot/create-azure-snapshot.sh \
+                  "$(Pipeline.Workspace)/inventory.json" \
+                  "${{ parameters.snapshotRetentionDays }}"
+
+  - stage: Patch
+    displayName: Apply patches
+    dependsOn: Snapshot
+    condition: and(succeeded(), eq('${{ parameters.dryRun }}', 'false'))
+    jobs:
+      - job: PatchLinux
+        condition: contains('${{ parameters.targetGroup }}', 'linux')
+        steps:
+          - task: AzureCLI@2
+            displayName: Run VM Patch Assessment + Install (Azure Update Manager)
+            inputs:
+              azureSubscription: "patching-automation-sc"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                for vm in $(jq -r '.[].name' $(Pipeline.Workspace)/inventory.json); do
+                  rg=$(jq -r --arg n "$vm" '.[] | select(.name==$n) | .rg' $(Pipeline.Workspace)/inventory.json)
+                  az vm run-command invoke \
+                    --resource-group "$rg" --name "$vm" \
+                    --command-id RunShellScript \
+                    --scripts "sudo apt-get update && sudo apt-get -y upgrade"
+                done
+
+      - job: PatchWindows
+        condition: contains('${{ parameters.targetGroup }}', 'windows')
+        steps:
+          - task: AzureCLI@2
+            displayName: Trigger Windows Update via run-command
+            inputs:
+              azureSubscription: "patching-automation-sc"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                for vm in $(jq -r '.[].name' $(Pipeline.Workspace)/inventory.json); do
+                  rg=$(jq -r --arg n "$vm" '.[] | select(.name==$n) | .rg' $(Pipeline.Workspace)/inventory.json)
+                  az vm run-command invoke \
+                    --resource-group "$rg" --name "$vm" \
+                    --command-id RunPowerShellScript \
+                    --scripts "Install-Module PSWindowsUpdate -Force; Get-WindowsUpdate -AcceptAll -Install -AutoReboot"
+                done
+
+  - stage: Postcheck
+    displayName: Post-patch validation
+    dependsOn: Patch
+    condition: succeeded()
+    jobs:
+      - job: Postcheck
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifact: precheck-report
+              path: $(Pipeline.Workspace)
+
+          - task: Bash@3
+            displayName: Run post-checks and diff against baseline
+            inputs:
+              targetType: filePath
+              filePath: patching-automation/scripts/postchecks/run-postchecks.sh
+              arguments: "$(Pipeline.Workspace)/inventory.json $(Pipeline.Workspace)/precheck-report.json"
+
+  - stage: Notify
+    displayName: Send completion notification
+    dependsOn:
+      - Precheck
+      - Snapshot
+      - Patch
+      - Postcheck
+    condition: always()
+    jobs:
+      - job: Notify
+        steps:
+          - task: Bash@3
+            displayName: Call Logic App webhook (SendGrid notification)
+            inputs:
+              targetType: inline
+              script: |
+                STATUS="$(Agent.JobStatus)"
+                curl -X POST "$(LOGIC_APP_URL)" \
+                  -H "Content-Type: application/json" \
+                  -d "{
+                    \"pipeline\": \"$(Build.DefinitionName)\",
+                    \"runId\": \"$(Build.BuildId)\",
+                    \"targetGroup\": \"${{ parameters.targetGroup }}\",
+                    \"status\": \"$STATUS\",
+                    \"dryRun\": ${{ parameters.dryRun }}
+                  }"

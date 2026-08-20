@@ -15,7 +15,10 @@ that I can write YAML.
 | [`terraform-modules/`](./terraform-modules) | Composable, versioned IaC — networking, AKS, storage — with real defaults (Workload Identity, private endpoints, disabled shared keys), not toy examples |
 | [`kubernetes-helm/`](./kubernetes-helm) | A hardened application Helm chart plus an ArgoCD app-of-apps GitOps layout |
 | [`.github/workflows/`](./.github/workflows) | CI/CD: Terraform plan/apply with OIDC (no stored cloud secrets), container build/scan/sign, Helm lint, scheduled drift detection |
-| [`scripts/`](./scripts) | Operational automation: Entra ID deprovisioning runbook, AKS cluster bootstrap, cluster-state backup |
+| [`scripts/`](./scripts) | Operational automation: Entra ID deprovisioning, AKS cluster bootstrap, cluster-state backup, cross-platform patching with pre/post checks and snapshotting |
+| [`monitoring-telegraf/`](./monitoring-telegraf) | Hybrid Azure + on-prem monitoring — Telegraf agents, InfluxDB, and Grafana dashboards for infrastructure Azure Monitor can't reach directly |
+| [`patching-automation/`](./patching-automation) | Scheduled Windows/Linux patch pipeline — implemented in both Azure DevOps and Jenkins/Bitbucket, with prechecks, pre-patch snapshots, postcheck regression detection, and SendGrid notifications via Azure Logic App |
+| [`monitoring-telegraf/`](./monitoring-telegraf) | Grafana + InfluxDB + Telegraf stack monitoring Azure (Sophos cloud firewall, Application Gateway WAF) and on-prem (Domain Controllers, Barracuda firewall, storage server, DHCP, Veeam backup) side by side |
 | [`docs/architecture.md`](./docs/architecture.md) | How the pieces fit together end to end |
 
 ## Design principles behind this repo
@@ -56,6 +59,17 @@ devops-portfolio/
 │   ├── azure-ad-deprovisioning/ # Entra ID leaver automation (Managed Identity)
 │   ├── aks-bootstrap/           # One-time cluster bootstrap (ingress, cert-manager, ArgoCD)
 │   └── backup/                  # Namespaced resource export + Blob Storage archive
+├── patching-automation/
+│   ├── azure-devops/            # azure-pipelines.yml: precheck → snapshot → patch → postcheck → notify
+│   ├── jenkins/                 # Equivalent Jenkinsfile, Bitbucket-sourced
+│   ├── scripts/                 # Pre/postcheck + Azure snapshot scripts shared by both pipelines
+│   └── logic-app/               # ARM template: Logic App + SendGrid notification
+├── monitoring-telegraf/
+│   ├── telegraf-configs/         # Base Linux/Windows configs + SNMP template
+│   │   └── roles/                # Sophos FW, Azure WAF, DCs, Barracuda FW, storage, DHCP, Veeam
+│   ├── scripts/                  # WAF metrics + Veeam job status → InfluxDB line protocol
+│   ├── grafana-provisioning/     # Provisioned datasource + dashboards
+│   └── docker-compose.yml        # InfluxDB + Grafana + local Telegraf
 └── docs/
     └── architecture.md
 ```

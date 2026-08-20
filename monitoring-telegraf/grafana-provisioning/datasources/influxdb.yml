@@ -1,0 +1,14 @@
+# Grafana provisioning: auto-registers the InfluxDB datasource on startup
+# so a fresh Grafana instance doesn't need manual datasource setup.
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-Telegraf
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    database: telegraf
+    isDefault: true
+    jsonData:
+      httpMode: GET
+      timeInterval: "30s"

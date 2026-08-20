@@ -1,0 +1,28 @@
+# Reference stack for standing up the InfluxDB + Grafana half of this
+# monitoring setup quickly (e.g. for local testing of dashboard changes).
+# In production this ran on a dedicated Ubuntu host, not in containers —
+# see README for why.
+services:
+  influxdb:
+    image: influxdb:1.12
+    ports:
+      - "8086:8086"
+    environment:
+      INFLUXDB_DB: telegraf
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - influxdb
+    volumes:
+      - ./grafana-provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  influxdb-data:
+  grafana-data:
