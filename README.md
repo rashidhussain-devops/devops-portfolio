@@ -20,9 +20,10 @@ with no way to scale short of provisioning another VM by hand — and every
 release carried real outage risk. I recommended and built the replacement
 myself: an Azure DevOps CI/CD pipeline running on an on-premises
 self-hosted build agent, deploying containerized applications to AKS with
-zero-downtime rolling updates. Developers now push to a branch and the
-pipeline handles build, image push, and deployment — no RDP, no outage
-window, no manual VM provisioning to scale.
+zero-downtime rolling updates — reconciled continuously by ArgoCD/FluxCD
+rather than the pipeline pushing state directly. Developers now push to a
+branch and the pipeline plus GitOps sync handle build, image push, and
+deployment — no RDP, no outage window, no manual VM provisioning to scale.
 
 **[→ Full case study, architecture diagrams, and the actual pipeline/agent/Kubernetes configs](./legacy-to-aks-migration)**
 

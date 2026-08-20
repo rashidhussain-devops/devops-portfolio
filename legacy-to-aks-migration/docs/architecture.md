@@ -25,17 +25,22 @@ flowchart LR
     Dev[Developer] -->|git push| Repo[Azure Repos / branch]
     Repo -->|trigger| Pipeline[Azure DevOps Pipeline<br/>on-prem self-hosted agent]
     Pipeline -->|docker build + push| ACR[Azure Container Registry]
-    Pipeline -->|kubectl apply,<br/>rolling update| AKS[AKS cluster]
+    Pipeline -->|update image tag| Manifests[platform-manifests repo]
+    Manifests -->|watched by| GitOps[ArgoCD / FluxCD]
+    GitOps -->|reconcile,<br/>rolling update| AKS[AKS cluster]
     ACR --> AKS
     AKS -->|maxUnavailable: 0| Users[End users — zero downtime]
 ```
 
 A `git push` triggers the pipeline on the on-prem self-hosted agent, which
-builds the container image, pushes it to ACR, and applies a rolling
-Kubernetes deployment with `maxUnavailable: 0` — new pods must pass their
-readiness probe and be serving traffic before any old pod is terminated,
-so there's no window where capacity drops or users hit a half-updated
-instance.
+builds the container image, pushes it to ACR, and updates the image tag in
+a separate manifests repo. ArgoCD/FluxCD — watching that repo — pick up the
+change and reconcile the cluster: new pods must pass their readiness probe
+and be serving traffic before any old pod is terminated (`maxUnavailable:
+0`), so there's no window where capacity drops or users hit a
+half-updated instance. See [`../gitops/README.md`](../gitops/README.md)
+for why the deploy step moved from the pipeline running `kubectl apply`
+directly to this git-driven reconciliation model.
 
 ## Why containers + Kubernetes over "just add a load balancer + more VMs"
 

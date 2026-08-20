@@ -1,0 +1,27 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: platform-manifests
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://dev.azure.com/qrcs/_git/platform-manifests
+  ref:
+    branch: main
+  secretRef:
+    name: azure-repos-credentials   # PAT-based auth, stored as a K8s secret
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: qrcs-website
+  namespace: flux-system
+spec:
+  interval: 1m
+  path: "./apps/website"
+  prune: true            # removes resources deleted from git, same as ArgoCD's automated.prune
+  sourceRef:
+    kind: GitRepository
+    name: platform-manifests
+  targetNamespace: production
+  timeout: 3m

@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qrcs-website
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://dev.azure.com/qrcs/_git/platform-manifests
+    targetRevision: main
+    path: apps/website
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  syncPolicy:
+    automated:
+      prune: true      # removes resources deleted from git
+      selfHeal: true    # reverts manual kubectl changes back to git state
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

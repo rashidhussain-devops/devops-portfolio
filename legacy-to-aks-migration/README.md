@@ -32,12 +32,15 @@ and could reuse hardware that was otherwise sitting idle post-migration.
 | [`kubernetes/website-deployment.yaml`](./kubernetes/website-deployment.yaml) | Rolling update config (`maxUnavailable: 0`) that's the actual mechanism behind "zero downtime" |
 | [`azure-devops/azure-pipelines-website.yml`](./azure-devops/azure-pipelines-website.yml) | Build → push → deploy pipeline, gated by a manual approval on the production environment |
 | [`self-hosted-agent/`](./self-hosted-agent) | Registering an on-prem Windows host as a self-hosted Azure DevOps build agent, and why |
+| [`gitops/`](./gitops) | ArgoCD + FluxCD taking over sync from the pipeline, plus per-application aliases for day-to-day operation |
 | [`docs/architecture.md`](./docs/architecture.md) | Before/after diagrams and the reasoning behind each decision |
 
 ## Outcome
 
 Developers now push code to a branch and the pipeline handles the rest —
-build, image push, and a rolling Kubernetes deployment that only retires an
-old pod once its replacement is confirmed healthy. No more manual RDP
-deployments, no more outage window during releases, and horizontal scaling
-is now a replica-count change instead of a new VM to provision by hand.
+build, image push, and a git-driven deployment that ArgoCD/FluxCD
+continuously reconcile against the cluster, only retiring an old pod once
+its replacement is confirmed healthy. No more manual RDP deployments, no
+more outage window during releases, no more drift between what's running
+and what git says should be running, and horizontal scaling is now a
+replica-count change instead of a new VM to provision by hand.
